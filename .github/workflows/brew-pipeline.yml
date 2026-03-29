@@ -24,7 +24,6 @@ jobs:
         run: |
           mkdir -p /tmp/bundle/bin /tmp/bundle/lib
           cp /tmp/hello-nix/bin/hello /tmp/bundle/bin/
-
           otool -L /tmp/bundle/bin/hello \
             | grep -v /usr/lib | grep -v /System | grep -v ":" \
             | awk '{print $1}' | while read lib; do
@@ -32,7 +31,6 @@ jobs:
               cp "$lib" /tmp/bundle/lib/
               install_name_tool -change "$lib" "@executable_path/../lib/$libname" /tmp/bundle/bin/hello
             done
-
           /tmp/bundle/bin/hello
 
       - name: Create tarball
@@ -50,32 +48,18 @@ jobs:
             --notes "Test for homebrew pipeline" \
             /tmp/hello-aarch64-darwin.tar.gz
 
-      - name: Update homebrew tap
+      - name: Generate and push formula
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
-          SHA256=$(shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz | cut -d' ' -f1)
-          URL="https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz"
-
+          SHA=$(shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz | cut -d' ' -f1)
+          URL=https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz
+          printf 'class HelloNix < Formula\n  desc "Hello world built from nixpkgs (test)"\n  homepage "https://github.com/lambdasistemi/cachix-warmup"\n  url "%s"\n  sha256 "%s"\n  version "2.12.3"\n\n  def install\n    bin.install "bin/hello"\n    lib.install Dir["lib/*"]\n  end\nend\n' "$URL" "$SHA" > /tmp/hello-nix.rb
+          cat /tmp/hello-nix.rb
           git clone https://x-access-token:${TAP_TOKEN}@github.com/lambdasistemi/homebrew-tap.git /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp /tmp/hello-nix.rb /tmp/tap/Formula/hello-nix.rb
           cd /tmp/tap
-          mkdir -p Formula
-
-          cat > Formula/hello-nix.rb <<FORMULA
-class HelloNix < Formula
-  desc "Hello world built from nixpkgs (test)"
-  homepage "https://github.com/lambdasistemi/cachix-warmup"
-  url "$URL"
-  sha256 "$SHA256"
-  version "2.12.3"
-
-  def install
-    bin.install "bin/hello"
-    lib.install Dir["lib/*"]
-  end
-end
-FORMULA
-
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add Formula/hello-nix.rb
@@ -88,7 +72,3 @@ FORMULA
           brew install hello-nix
           echo "==> Running:"
           hello
-          echo "==> Which:"
-          which hello
-          echo "==> Libs:"
-          otool -L $(which hello)
