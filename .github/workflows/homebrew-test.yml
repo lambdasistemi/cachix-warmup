@@ -27,20 +27,16 @@ jobs:
             | grep -v /usr/lib | grep -v /System | grep -v ":" \
             | awk '{print $1}' | while read lib; do
               libname=$(basename "$lib")
-              echo "bundling: $lib -> lib/$libname"
               cp "$lib" /tmp/bundle/lib/
               install_name_tool -change "$lib" "@executable_path/../lib/$libname" /tmp/bundle/bin/hello
             done
 
-          echo "==> Verify:"
-          otool -L /tmp/bundle/bin/hello
           /tmp/bundle/bin/hello
 
-      - name: Create tarball and sha256
+      - name: Create tarball
         run: |
-          cd /tmp
-          tar czf hello-aarch64-darwin.tar.gz -C bundle .
-          shasum -a 256 hello-aarch64-darwin.tar.gz
+          tar czf /tmp/hello-aarch64-darwin.tar.gz -C /tmp/bundle .
+          shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz
 
       - name: Create release
         env:
@@ -52,16 +48,22 @@ jobs:
             --notes "Test for homebrew pipeline" \
             /tmp/hello-aarch64-darwin.tar.gz
 
-      - name: Print formula
+      - name: Update homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           SHA256=$(shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz | cut -d' ' -f1)
-          cat << EOF
-          === FORMULA FOR homebrew-tap/Formula/hello-nix.rb ===
+          URL="https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz"
 
+          git clone https://x-access-token:${TAP_TOKEN}@github.com/lambdasistemi/homebrew-tap.git /tmp/tap
+          cd /tmp/tap
+
+          mkdir -p Formula
+          cat > Formula/hello-nix.rb << EOF
           class HelloNix < Formula
             desc "Hello world built from nixpkgs (test)"
             homepage "https://github.com/lambdasistemi/cachix-warmup"
-            url "https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz"
+            url "$URL"
             sha256 "$SHA256"
 
             def install
@@ -70,3 +72,9 @@ jobs:
             end
           end
           EOF
+
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add Formula/hello-nix.rb
+          git diff --cached --quiet || git commit -m "update hello-nix to hello-test-v1"
+          git push
