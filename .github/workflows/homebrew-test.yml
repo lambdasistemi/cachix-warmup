@@ -57,21 +57,22 @@ jobs:
 
           git clone https://x-access-token:${TAP_TOKEN}@github.com/lambdasistemi/homebrew-tap.git /tmp/tap
           cd /tmp/tap
-
           mkdir -p Formula
-          cat > Formula/hello-nix.rb << EOF
-          class HelloNix < Formula
-            desc "Hello world built from nixpkgs (test)"
-            homepage "https://github.com/lambdasistemi/cachix-warmup"
-            url "$URL"
-            sha256 "$SHA256"
 
-            def install
-              bin.install "bin/hello"
-              lib.install Dir["lib/*"]
-            end
-          end
-          EOF
+          cat > Formula/hello-nix.rb <<FORMULA
+class HelloNix < Formula
+  desc "Hello world built from nixpkgs (test)"
+  homepage "https://github.com/lambdasistemi/cachix-warmup"
+  url "$URL"
+  sha256 "$SHA256"
+  version "2.12.3"
+
+  def install
+    bin.install "bin/hello"
+    lib.install Dir["lib/*"]
+  end
+end
+FORMULA
 
           git config user.name "github-actions"
           git config user.email "actions@github.com"
@@ -83,9 +84,9 @@ jobs:
         run: |
           brew tap lambdasistemi/tap
           brew install hello-nix
-          echo "==> Installed, running:"
+          echo "==> Running:"
           hello
           echo "==> Which:"
           which hello
-          echo "==> otool:"
+          echo "==> Libs:"
           otool -L $(which hello)
