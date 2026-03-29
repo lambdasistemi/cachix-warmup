@@ -1,0 +1,54 @@
+name: Darwin GHC Cache
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: darwin-ghc
+  cancel-in-progress: true
+
+jobs:
+  warm-ghc:
+    name: Warm GHC for aarch64-darwin
+    runs-on: macos-14
+    timeout-minutes: 360
+    steps:
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            extra-substituters = https://paolino.cachix.org
+            extra-trusted-public-keys = paolino.cachix.org-1:ecmgO3CXdgSWA2cHlm4srknd/cLFMLmK3i3NrzeDFaE=
+
+      - name: Install cachix
+        run: nix profile install nixpkgs#cachix
+
+      - name: Build and push GHC
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          CACHIX_CACHE="paolino"
+
+          # Targets: repo ref flake-attr
+          targets=(
+            "lambdasistemi/agent-daemon main devShells.aarch64-darwin.default.ghc"
+          )
+
+          for entry in "${targets[@]}"; do
+            read -r repo ref attr <<< "$entry"
+            echo "==> $repo#$attr (ref: $ref)"
+
+            dir=$(mktemp -d)
+            git clone --depth 1 --branch "$ref" "https://github.com/$repo.git" "$dir"
+
+            echo "==> Building GHC"
+            nix build -L "$dir#$attr" --no-link --print-out-paths > /tmp/ghc-out
+            echo "==> Built: $(cat /tmp/ghc-out)"
+
+            echo "==> Pushing to cachix"
+            cachix push "$CACHIX_CACHE" < /tmp/ghc-out
+
+            rm -rf "$dir"
+            echo "==> Done with $repo"
+          done
