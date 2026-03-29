@@ -78,3 +78,14 @@ jobs:
           git add Formula/hello-nix.rb
           git diff --cached --quiet || git commit -m "update hello-nix to hello-test-v1"
           git push
+
+      - name: Test brew install
+        run: |
+          brew tap lambdasistemi/tap
+          brew install hello-nix
+          echo "==> Installed, running:"
+          hello
+          echo "==> Which:"
+          which hello
+          echo "==> otool:"
+          otool -L $(which hello)
