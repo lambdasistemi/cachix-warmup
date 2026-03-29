@@ -1,0 +1,59 @@
+name: Homebrew Pipeline Test
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test-bundle:
+    name: Build, bundle, test
+    runs-on: macos-14
+    steps:
+      - uses: cachix/install-nix-action@v30
+
+      - name: Build hello
+        run: |
+          nix build nixpkgs#hello -o /tmp/hello-nix
+          echo "==> Binary:"
+          ls -la /tmp/hello-nix/bin/hello
+          echo "==> Dynamic libs:"
+          otool -L /tmp/hello-nix/bin/hello
+          echo "==> Runs from nix store:"
+          /tmp/hello-nix/bin/hello
+
+      - name: Bundle for distribution
+        run: |
+          mkdir -p /tmp/bundle/bin
+          cp /tmp/hello-nix/bin/hello /tmp/bundle/bin/
+
+          echo "==> Check if it runs outside nix store (naive copy):"
+          /tmp/bundle/bin/hello || echo "FAILED — needs dylib bundling"
+
+          echo "==> Fixing dylibs with install_name_tool..."
+          # Find all non-system dylibs
+          otool -L /tmp/bundle/bin/hello | grep -v /usr/lib | grep -v /System | grep -v ":" | awk '{print $1}' | while read lib; do
+            echo "  bundling: $lib"
+            libname=$(basename "$lib")
+            cp "$lib" /tmp/bundle/bin/
+            install_name_tool -change "$lib" "@executable_path/$libname" /tmp/bundle/bin/hello
+          done
+
+          echo "==> After fix:"
+          otool -L /tmp/bundle/bin/hello
+
+          echo "==> Test run:"
+          /tmp/bundle/bin/hello
+
+      - name: Create tarball
+        run: |
+          cd /tmp
+          tar czf hello-aarch64-darwin.tar.gz -C bundle .
+          ls -lh hello-aarch64-darwin.tar.gz
+          echo "==> Contents:"
+          tar tzf hello-aarch64-darwin.tar.gz
+
+      - name: Test from tarball
+        run: |
+          mkdir /tmp/test-install
+          tar xzf /tmp/hello-aarch64-darwin.tar.gz -C /tmp/test-install
+          echo "==> Run from extracted tarball:"
+          /tmp/test-install/bin/hello
