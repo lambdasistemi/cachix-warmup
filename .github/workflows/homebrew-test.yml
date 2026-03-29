@@ -3,57 +3,70 @@ name: Homebrew Pipeline Test
 on:
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
-  test-bundle:
-    name: Build, bundle, test
+  build-and-release:
+    name: Build, bundle, release
     runs-on: macos-14
     steps:
+      - uses: actions/checkout@v4
+
       - uses: cachix/install-nix-action@v30
 
       - name: Build hello
-        run: |
-          nix build nixpkgs#hello -o /tmp/hello-nix
-          echo "==> Binary:"
-          ls -la /tmp/hello-nix/bin/hello
-          echo "==> Dynamic libs:"
-          otool -L /tmp/hello-nix/bin/hello
-          echo "==> Runs from nix store:"
-          /tmp/hello-nix/bin/hello
+        run: nix build nixpkgs#hello -o /tmp/hello-nix
 
-      - name: Bundle for distribution
+      - name: Bundle
         run: |
-          mkdir -p /tmp/bundle/bin
+          mkdir -p /tmp/bundle/bin /tmp/bundle/lib
           cp /tmp/hello-nix/bin/hello /tmp/bundle/bin/
 
-          echo "==> Check if it runs outside nix store (naive copy):"
-          /tmp/bundle/bin/hello || echo "FAILED — needs dylib bundling"
+          otool -L /tmp/bundle/bin/hello \
+            | grep -v /usr/lib | grep -v /System | grep -v ":" \
+            | awk '{print $1}' | while read lib; do
+              libname=$(basename "$lib")
+              echo "bundling: $lib -> lib/$libname"
+              cp "$lib" /tmp/bundle/lib/
+              install_name_tool -change "$lib" "@executable_path/../lib/$libname" /tmp/bundle/bin/hello
+            done
 
-          echo "==> Fixing dylibs with install_name_tool..."
-          # Find all non-system dylibs
-          otool -L /tmp/bundle/bin/hello | grep -v /usr/lib | grep -v /System | grep -v ":" | awk '{print $1}' | while read lib; do
-            echo "  bundling: $lib"
-            libname=$(basename "$lib")
-            cp "$lib" /tmp/bundle/bin/
-            install_name_tool -change "$lib" "@executable_path/$libname" /tmp/bundle/bin/hello
-          done
-
-          echo "==> After fix:"
+          echo "==> Verify:"
           otool -L /tmp/bundle/bin/hello
-
-          echo "==> Test run:"
           /tmp/bundle/bin/hello
 
-      - name: Create tarball
+      - name: Create tarball and sha256
         run: |
           cd /tmp
           tar czf hello-aarch64-darwin.tar.gz -C bundle .
-          ls -lh hello-aarch64-darwin.tar.gz
-          echo "==> Contents:"
-          tar tzf hello-aarch64-darwin.tar.gz
+          shasum -a 256 hello-aarch64-darwin.tar.gz
 
-      - name: Test from tarball
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir /tmp/test-install
-          tar xzf /tmp/hello-aarch64-darwin.tar.gz -C /tmp/test-install
-          echo "==> Run from extracted tarball:"
-          /tmp/test-install/bin/hello
+          gh release delete hello-test-v1 -y 2>/dev/null || true
+          gh release create hello-test-v1 \
+            --title "Hello World Test" \
+            --notes "Test for homebrew pipeline" \
+            /tmp/hello-aarch64-darwin.tar.gz
+
+      - name: Print formula
+        run: |
+          SHA256=$(shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz | cut -d' ' -f1)
+          cat << EOF
+          === FORMULA FOR homebrew-tap/Formula/hello-nix.rb ===
+
+          class HelloNix < Formula
+            desc "Hello world built from nixpkgs (test)"
+            homepage "https://github.com/lambdasistemi/cachix-warmup"
+            url "https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz"
+            sha256 "$SHA256"
+
+            def install
+              bin.install "bin/hello"
+              lib.install Dir["lib/*"]
+            end
+          end
+          EOF
