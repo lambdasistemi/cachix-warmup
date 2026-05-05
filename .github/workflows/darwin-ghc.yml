@@ -34,6 +34,7 @@ jobs:
           targets=(
             "lambdasistemi/agent-daemon main devShells.aarch64-darwin.default.ghc"
             "lambdasistemi/cardano-mpfs-offchain main devShells.aarch64-darwin.default.ghc"
+            "lambdasistemi/amaru-treasury-tx main devShells.aarch64-darwin.default.ghc"
           )
 
           for entry in "${targets[@]}"; do
