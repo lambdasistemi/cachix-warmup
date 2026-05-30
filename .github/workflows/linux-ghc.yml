@@ -1,0 +1,74 @@
+name: Linux GHC Cache
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: linux-ghc
+  cancel-in-progress: true
+
+jobs:
+  warm-ghc:
+    name: Warm GHC for ${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-latest
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            extra-substituters = https://paolino.cachix.org
+            extra-trusted-public-keys = paolino.cachix.org-1:ecmgO3CXdgSWA2cHlm4srknd/cLFMLmK3i3NrzeDFaE=
+
+      - name: Install cachix
+        run: nix profile install nixpkgs#cachix
+
+      - name: Build and push GHC
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          SYSTEM: ${{ matrix.system }}
+        run: |
+          set -euo pipefail
+
+          CACHIX_CACHE="paolino"
+
+          # In-scope repos for epic paolino/dev-assets#29. The aarch64-linux
+          # devShell exists only after each consumer declares aarch64-linux
+          # (tx-tools#119, ledger-rdf#70, moog#135); until then this job skips
+          # the missing attrs instead of failing.
+          repos=(
+            "lambdasistemi/cardano-tx-tools main"
+            "lambdasistemi/cardano-ledger-rdf main"
+            "cardano-foundation/moog main"
+          )
+
+          for entry in "${repos[@]}"; do
+            read -r repo ref <<< "$entry"
+            attr="devShells.$SYSTEM.default.ghc"
+            echo "==> $repo#$attr (ref: $ref)"
+
+            dir=$(mktemp -d)
+            git clone --depth 1 --branch "$ref" "https://github.com/$repo.git" "$dir"
+
+            if ! nix eval "$dir#$attr.outPath" >/dev/null 2>&1; then
+              echo "==> $attr not present for $repo yet — skipping"
+              rm -rf "$dir"
+              continue
+            fi
+
+            echo "==> Building GHC"
+            nix build -L "$dir#$attr" --no-link --print-out-paths > /tmp/ghc-out
+
+            echo "==> Pushing to cachix"
+            cachix push "$CACHIX_CACHE" < /tmp/ghc-out
+
+            rm -rf "$dir"
+            echo "==> Done with $repo"
+          done
