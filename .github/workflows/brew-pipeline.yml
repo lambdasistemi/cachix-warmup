@@ -48,9 +48,18 @@ jobs:
             --notes "Test for homebrew pipeline" \
             /tmp/hello-aarch64-darwin.tar.gz
 
+      - name: Mint a scoped tap token
+        id: tap-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: lambdasistemi
+          repositories: homebrew-tap
+
       - name: Generate and push formula
         env:
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
         run: |
           SHA=$(shasum -a 256 /tmp/hello-aarch64-darwin.tar.gz | cut -d' ' -f1)
           URL=https://github.com/lambdasistemi/cachix-warmup/releases/download/hello-test-v1/hello-aarch64-darwin.tar.gz
