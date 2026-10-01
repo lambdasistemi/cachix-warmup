@@ -63,8 +63,16 @@ jobs:
               continue
             fi
 
-            echo "==> Building GHC"
-            nix build -L "$dir#$attr" --no-link --print-out-paths > /tmp/ghc-out
+            # watch-exec pushes every path as soon as it is realised, so a
+            # runner that dies mid-build (aarch64 runs out of memory on the
+            # full package set) still leaves the compiler in the cache; one
+            # derivation at a time keeps peak memory inside the 16 GB arm
+            # runner.
+            echo "==> Building GHC (pushing as built)"
+            # shellcheck disable=SC2016 # $1 expands in the inner bash
+            cachix watch-exec "$CACHIX_CACHE" -- \
+              bash -c 'nix build -L --max-jobs 1 "$1" --no-link --print-out-paths > /tmp/ghc-out' \
+              _ "$dir#$attr"
 
             echo "==> Pushing to cachix"
             cachix push "$CACHIX_CACHE" < /tmp/ghc-out
