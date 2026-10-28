@@ -32,11 +32,11 @@ jobs:
 
           # Targets: repo ref flake-attr [flake subdirectory]
           targets=(
+            "lambdasistemi/singular main devShells.aarch64-darwin.default.ghc offchain"
             "lambdasistemi/agent-daemon main devShells.aarch64-darwin.default.ghc"
             "lambdasistemi/cardano-mpfs-offchain main devShells.aarch64-darwin.default.ghc"
             "lambdasistemi/amaru-treasury-tx main devShells.aarch64-darwin.default.ghc"
             "lambdasistemi/sideband main devShells.aarch64-darwin.default.ghc"
-            "lambdasistemi/singular main devShells.aarch64-darwin.default.ghc offchain"
           )
 
           for entry in "${targets[@]}"; do
@@ -57,7 +57,11 @@ jobs:
             # only substitutes, so an unpinned compiler disappears within
             # weeks. Pin it; each run replaces the previous revision.
             echo "==> Pinning the compiler"
-            mapfile -t compilers < <(xargs nix-store -qR < /tmp/ghc-out \
+            # macOS ships bash 3.2, which has no mapfile.
+            compilers=()
+            while IFS= read -r compiler; do
+              compilers+=("$compiler")
+            done < <(xargs nix-store -qR < /tmp/ghc-out \
               | grep -E '^/nix/store/[a-z0-9]{32}-ghc-[0-9]+(\.[0-9]+)+$')
             if [ "${#compilers[@]}" -eq 0 ]; then
               echo "::error::no GHC compiler in the closure of $(cat /tmp/ghc-out)"
