@@ -90,7 +90,10 @@ gh run watch --repo lambdasistemi/cachix-warmup
 | Homebrew Pipeline Test | `.github/workflows/brew-pipeline.yml` | `push` to `main`, `workflow_dispatch` | `macos-14` | Bundles `nixpkgs#hello`, releases it as `hello-test-v1`, generates and pushes a Homebrew formula, then installs and runs it. |
 
 Each warm-up step is `git clone --depth 1`, `nix build --no-link
---print-out-paths`, then `cachix push paolino`. The Linux job runs a matrix
+--print-out-paths`, then `cachix push paolino`, then `cachix pin` of the
+compiler as `<repo>-ghc-<version>-<system>`. The cache evicts
+least-recently-used paths; the pin keeps the compiler, and each run
+replaces the previous pin revision. The Linux job runs a matrix
 over both architectures (`fail-fast: false`); the Darwin job is a single
 `aarch64-darwin` runner.
 
@@ -120,7 +123,7 @@ extra-trusted-public-keys = paolino.cachix.org-1:ecmgO3CXdgSWA2cHlm4srknd/cLFMLm
 
 | Secret | Used by | Purpose |
 | --- | --- | --- |
-| `CACHIX_AUTH_TOKEN` | both GHC workflows | Authenticates `cachix push` to the `paolino` cache. |
+| `CACHIX_AUTH_TOKEN` | both GHC workflows | Authenticates `cachix push` and `cachix pin` to the `paolino` cache. |
 | `TAP_TOKEN` | Homebrew pipeline | Push access to `lambdasistemi/homebrew-tap`. |
 | `GITHUB_TOKEN` | Homebrew pipeline | Creates the `hello-test-v1` GitHub release (default token). |
 

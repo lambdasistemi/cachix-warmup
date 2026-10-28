@@ -77,6 +77,22 @@ jobs:
             echo "==> Pushing to cachix"
             cachix push "$CACHIX_CACHE" < /tmp/ghc-out
 
+            # The cache evicts least-recently-used paths, and consumers' CI
+            # only substitutes, so an unpinned compiler disappears within
+            # weeks. Pin it; each run replaces the previous revision.
+            echo "==> Pinning the compiler"
+            mapfile -t compilers < <(xargs nix-store -qR < /tmp/ghc-out \
+              | grep -E '^/nix/store/[a-z0-9]{32}-ghc-[0-9]+(\.[0-9]+)+$')
+            if [ "${#compilers[@]}" -eq 0 ]; then
+              echo "::error::no GHC compiler in the closure of $(cat /tmp/ghc-out)"
+              exit 1
+            fi
+            for compiler in "${compilers[@]}"; do
+              pin="${repo##*/}-ghc-${compiler##*-}-$SYSTEM"
+              echo "==> pin $pin -> $compiler"
+              cachix pin "$CACHIX_CACHE" "$pin" "$compiler" --keep-revisions 1
+            done
+
             rm -rf "$dir"
             echo "==> Done with $repo"
           done

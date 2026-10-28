@@ -42,7 +42,9 @@ the "Build and push GHC" step:
    `cachix/install-nix-action@v30`), then `nix profile install nixpkgs#cachix`.
 2. For each target: `git clone --depth 1 --branch <ref>`, then
    `nix build -L <dir>#<attr> --no-link --print-out-paths`, then
-   `cachix push paolino` of the resulting store path.
+   `cachix push paolino` of the resulting store path, then
+   `cachix pin paolino <repo>-ghc-<version>-<system>` of the compiler in its
+   closure (`--keep-revisions 1`), so cache eviction cannot drop it.
 
 Key difference: `linux-ghc.yml` guards each target with
 `nix eval ... .outPath` and **skips** a repo that does not yet expose the
